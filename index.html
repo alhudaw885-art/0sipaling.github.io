@@ -1,0 +1,334 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>XOX MULTIPLAYER CLOUD</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;800&display=swap');
+        body { 
+            margin: 0; background: #020617; 
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: white;
+        }
+        .glass {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .cell {
+            aspect-ratio: 1/1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cell:active { transform: scale(0.9); }
+        .x-color { color: #f87171; text-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
+        .o-color { color: #60a5fa; text-shadow: 0 0 10px rgba(96, 165, 250, 0.5); }
+        
+        /* Animasi */
+        @keyframes pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop-anim { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center min-h-screen">
+
+    <!-- HEADER STATUS -->
+    <div id="game-status-bar" class="w-full max-w-md hidden mb-4">
+        <div class="glass p-4 rounded-3xl flex justify-between items-center">
+            <div>
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Room: <span id="room-id-display" class="text-white">-</span></p>
+                <p id="turn-info" class="text-xs font-black mt-1 uppercase italic text-indigo-400">Menunggu Lawan...</p>
+            </div>
+            <div class="text-right">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ronde <span id="current-round">1</span></p>
+                <p class="text-xs font-black mt-1"><span class="x-color">X: <span id="score-x">0</span></span> | <span class="o-color">O: <span id="score-o">0</span></span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="menu" class="w-full max-w-md space-y-6 mt-10">
+        <div class="text-center mb-10">
+            <h1 class="text-5xl font-black italic tracking-tighter">XOX <span class="text-indigo-500">CLOUD</span></h1>
+            <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-2 italic">Singapore Server Connected</p>
+        </div>
+
+        <div id="setup-area" class="space-y-4">
+            <div class="glass p-6 rounded-[2.5rem] space-y-4">
+                <p class="text-xs font-bold text-center text-slate-400 uppercase tracking-widest">Host Game Baru</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-black text-slate-500 ml-2">UKURAN (3-10)</label>
+                        <input id="grid-size" type="number" value="3" min="3" max="10" class="bg-slate-900 w-full p-4 rounded-2xl text-center font-bold border border-slate-800 outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[9px] font-black text-slate-500 ml-2">RONDE (3-10)</label>
+                        <input id="round-limit" type="number" value="3" min="3" max="10" class="bg-slate-900 w-full p-4 rounded-2xl text-center font-bold border border-slate-800 outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+                <button onclick="createRoom()" class="w-full bg-indigo-600 p-5 rounded-3xl font-black text-white active:scale-95 transition-all shadow-xl shadow-indigo-600/20 italic">BUAT ROOM</button>
+            </div>
+
+            <div class="text-center py-2 text-slate-700 font-bold text-xs uppercase tracking-widest">Atau</div>
+
+            <div class="glass p-6 rounded-[2.5rem] space-y-4">
+                <p class="text-xs font-bold text-center text-slate-400 uppercase tracking-widest">Gabung Lawan</p>
+                <input id="join-room-id" type="text" placeholder="MASUKKAN KODE ROOM..." class="bg-slate-900 w-full p-5 rounded-3xl text-center font-black border border-slate-800 outline-none focus:border-indigo-500 tracking-[0.5em]">
+                <button onclick="joinRoom()" class="w-full bg-white text-slate-950 p-5 rounded-3xl font-black active:scale-95 transition-all italic">GABUNG SEKARANG</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME BOARD -->
+    <div id="game-board-container" class="hidden w-full max-w-md mt-4">
+        <div id="grid" class="glass p-2 rounded-3xl grid gap-2"></div>
+    </div>
+
+    <!-- OVERLAY INFO -->
+    <div id="overlay" class="fixed inset-0 z-[100] bg-slate-950/90 hidden flex-col items-center justify-center p-8 text-center">
+        <h2 id="overlay-title" class="text-4xl font-black italic text-white mb-2 uppercase">MENUNGGU...</h2>
+        <p id="overlay-desc" class="text-slate-400 font-bold text-xs uppercase tracking-widest mb-10">Beri tahu teman kamu kode room-nya</p>
+        <div id="overlay-content" class="text-6xl font-black text-indigo-500 mb-10 tracking-widest">XXXXX</div>
+        <button id="overlay-btn" class="hidden bg-indigo-600 px-10 py-4 rounded-3xl font-black italic">LANJUT</button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBfyoYAGe0DEL20DZAWZxPTfAl-Z-p6XYg",
+            authDomain: "huda-smm.firebaseapp.com",
+            projectId: "huda-smm",
+            databaseURL: "https://huda-smm-default-rtdb.asia-southeast1.firebasedatabase.app",
+            appId: "1:188041108472:web:50ee121f1fe68897d7940d"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // Sound System
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            
+            if(type === 'click') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            } else if(type === 'win') {
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            }
+        }
+
+        let myId = Math.random().toString(36).substring(7);
+        let mySymbol = ''; // X atau O
+        let currentRoom = null;
+        let isMyTurn = false;
+        let gameState = [];
+        let config = { size: 3, rounds: 3 };
+
+        function showOverlay(title, desc, content, showBtn = false) {
+            document.getElementById('overlay-title').innerText = title;
+            document.getElementById('overlay-desc').innerText = desc;
+            document.getElementById('overlay-content').innerText = content;
+            document.getElementById('overlay-btn').style.display = showBtn ? 'block' : 'none';
+            document.getElementById('overlay').style.display = 'flex';
+        }
+
+        function createRoom() {
+            const size = parseInt(document.getElementById('grid-size').value);
+            const rounds = parseInt(document.getElementById('round-limit').value);
+            if(size < 3 || size > 10) return alert("Ukuran 3-10 saja!");
+            
+            const roomId = Math.floor(1000 + Math.random() * 9000).toString();
+            currentRoom = roomId;
+
+            const roomData = {
+                id: roomId,
+                host: myId,
+                player2: null,
+                config: { size, rounds },
+                board: Array(size * size).fill(''),
+                turn: 'X', // Selalu X di ronde 1
+                round: 1,
+                scores: { X: 0, O: 0 },
+                status: 'waiting',
+                starter: 'X'
+            };
+
+            db.ref('xox_rooms/' + roomId).set(roomData).then(() => {
+                mySymbol = 'X'; // Host selalu X di ronde 1 (tapi nanti gacha di ronde selanjutnya)
+                showOverlay("ROOM DIBUAT", "Bagikan kode ini ke lawan:", roomId);
+                listenToRoom(roomId);
+            });
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('join-room-id').value.trim();
+            if(!roomId) return;
+
+            db.ref('xox_rooms/' + roomId).once('value', snap => {
+                const data = snap.val();
+                if(!data) return alert("Room tidak ditemukan!");
+                if(data.player2 && data.player2 !== myId) return alert("Room penuh!");
+
+                mySymbol = 'O'; 
+                currentRoom = roomId;
+                db.ref('xox_rooms/' + roomId + '/player2').set(myId);
+                db.ref('xox_rooms/' + roomId + '/status').set('playing');
+                
+                document.getElementById('overlay').style.display = 'none';
+                listenToRoom(roomId);
+            });
+        }
+
+        function listenToRoom(roomId) {
+            db.ref('xox_rooms/' + roomId).on('value', snap => {
+                const data = snap.val();
+                if(!data) return;
+
+                config = data.config;
+                gameState = data.board;
+                
+                // Update UI ronde & skor
+                document.getElementById('room-id-display').innerText = roomId;
+                document.getElementById('current-round').innerText = data.round;
+                document.getElementById('score-x').innerText = data.scores.X;
+                document.getElementById('score-o').innerText = data.scores.O;
+                document.getElementById('game-status-bar').classList.remove('hidden');
+                document.getElementById('menu').classList.add('hidden');
+                document.getElementById('game-board-container').classList.remove('hidden');
+
+                if(data.status === 'playing') {
+                    document.getElementById('overlay').style.display = 'none';
+                    isMyTurn = data.turn === mySymbol;
+                    document.getElementById('turn-info').innerText = isMyTurn ? "GILIRAN KAMU ("+mySymbol+")" : "GILIRAN LAWAN ("+data.turn+")";
+                    document.getElementById('turn-info').className = isMyTurn ? "text-xs font-black mt-1 uppercase italic text-green-400" : "text-xs font-black mt-1 uppercase italic text-red-400";
+                }
+
+                renderBoard(data.config.size);
+                checkWinnerLocal(data);
+            });
+        }
+
+        function renderBoard(size) {
+            const grid = document.getElementById('grid');
+            grid.style.gridTemplateColumns = `repeat(${size}, minmax(0, 1fr))`;
+            grid.innerHTML = '';
+            
+            gameState.forEach((val, idx) => {
+                const cell = document.createElement('div');
+                cell.className = `cell glass rounded-xl text-2xl bg-slate-900/50 ${val === 'X' ? 'x-color' : 'o-color'}`;
+                cell.innerText = val;
+                if(!val && isMyTurn) {
+                    cell.onclick = () => makeMove(idx);
+                }
+                grid.appendChild(cell);
+            });
+        }
+
+        function makeMove(idx) {
+            if(!isMyTurn || gameState[idx]) return;
+            playSound('click');
+            gameState[idx] = mySymbol;
+            const nextTurn = mySymbol === 'X' ? 'O' : 'X';
+            
+            db.ref('xox_rooms/' + currentRoom).update({
+                board: gameState,
+                turn: nextTurn
+            });
+        }
+
+        function checkWinnerLocal(data) {
+            const size = data.config.size;
+            const board = data.board;
+            let win = null;
+
+            // Logika cek menang (Horizontal, Vertikal, Diagonal)
+            // Ini disederhanakan untuk efisiensi
+            const check = (cells) => {
+                if(cells.every(c => c === 'X')) return 'X';
+                if(cells.every(c => c === 'O')) return 'O';
+                return null;
+            };
+
+            // Baris
+            for(let i=0; i<size; i++) {
+                const row = board.slice(i*size, i*size + size);
+                win = win || check(row);
+            }
+            // Kolom
+            for(let i=0; i<size; i++) {
+                const col = [];
+                for(let j=0; j<size; j++) col.push(board[i + j*size]);
+                win = win || check(col);
+            }
+            // Diag
+            const d1 = [], d2 = [];
+            for(let i=0; i<size; i++) {
+                d1.push(board[i * size + i]);
+                d2.push(board[i * size + (size - 1 - i)]);
+            }
+            win = win || check(d1) || check(d2);
+
+            if(win) {
+                handleRoundEnd(win, data);
+            } else if(!board.includes('')) {
+                handleRoundEnd('draw', data);
+            }
+        }
+
+        function handleRoundEnd(winner, data) {
+            if(myId !== data.host) return; // Hanya host yang proses perpindahan ronde
+            
+            playSound('win');
+            let newScores = {...data.scores};
+            if(winner !== 'draw') newScores[winner]++;
+
+            if(data.round >= data.config.rounds) {
+                // Game Selesai
+                const finalWinner = newScores.X > newScores.O ? 'X MENANG!' : (newScores.O > newScores.X ? 'O MENANG!' : 'SERI!');
+                db.ref('xox_rooms/' + currentRoom).update({
+                    status: 'finished',
+                    scores: newScores
+                });
+                alert("GAME SELESAI: " + finalWinner);
+                location.reload();
+            } else {
+                // Lanjut Ronde
+                const nextRound = data.round + 1;
+                let nextStarter = '';
+                
+                if(nextRound === 2) nextStarter = 'O'; // Ronde 2: O mulai
+                else nextStarter = Math.random() < 0.5 ? 'X' : 'O'; // Ronde 3 dst: Random
+
+                setTimeout(() => {
+                    db.ref('xox_rooms/' + currentRoom).update({
+                        board: Array(data.config.size * data.config.size).fill(''),
+                        round: nextRound,
+                        turn: nextStarter,
+                        scores: newScores,
+                        starter: nextStarter
+                    });
+                }, 2000);
+            }
+        }
+    </script>
+</body>
+</html>
+
+```
